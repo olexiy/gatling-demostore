@@ -18,14 +18,18 @@ class ComputerSimulation extends Simulation {
 		.userAgentHeader("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.101 Safari/537.36")
 
 	object Search {
+
+		val searchFeeder = csv("data/computer_search.csv").random
 		val search = exec(http("Load_Homepage")
 			.get("/computers"))
 			.pause(1)
-			.exec(http("Search_Computer")
-				.get("/computers?f=macbook"))
+			.feed(searchFeeder)
+			.exec(http("Search_Computer_${searchCriterion}")
+				.get("/computers?f=${searchCriterion}")
+				.check(css("a:contains('${searchComputerName}')", "href").saveAs("computerURL")))
 			.pause(1)
-			.exec(http("Select_Computer")
-				.get("/computers/89"))
+			.exec(http("Select_Computer_${searchComputerName}")
+				.get("${computerURL}"))
 			.pause(1)
 	}
 
@@ -48,7 +52,8 @@ class ComputerSimulation extends Simulation {
 				.formParam("name", "Macbook Air")
 				.formParam("introduced", "2020-01-01")
 				.formParam("discontinued", "")
-				.formParam("company", "3"))
+				.formParam("company", "3")
+			.check(status.is(200)))
 	}
 
 	val admins = scenario("Admins").exec(Search.search, Browse.browse, Create.create)
