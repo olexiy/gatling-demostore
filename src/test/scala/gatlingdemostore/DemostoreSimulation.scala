@@ -1,10 +1,11 @@
 package gatlingdemostore
 
 import scala.concurrent.duration._
-
 import io.gatling.core.Predef._
 import io.gatling.http.Predef._
 import io.gatling.jdbc.Predef._
+
+import scala.util.Random
 
 class DemostoreSimulation extends Simulation {
 
@@ -15,8 +16,20 @@ class DemostoreSimulation extends Simulation {
 
 	val cateforyFeeder = csv("data/category_detail.csv").random
 	val jsonFeederProducts = jsonFile("data/product_detail.json").random
-	val csvFeederLoginDetail = csv("data/login_detail").circular
+	val csvFeederLoginDetail = csv("data/login_detail.csv").circular
 
+	val rnd = new Random()
+
+	def randomString(length: Int): String = {
+		rnd.alphanumeric.filter(_.isLetter ).take(length).mkString
+	}
+
+	val initSession = exec(flushCookieJar)
+		.exec(session => session.set("randomNumber", rnd.nextInt()))
+		.exec(session => session.set("customerLoggedIn", false))
+		.exec(session => session.set("cartTotal", 0.0))
+		.exec(addCookie(Cookie("sessionID", randomString(10)).withDomain(domain)))
+		.exec { session => println(session); session}
 	object CMSPages{
 		def homePage = {
 			exec(http("Load Home Page")
@@ -90,9 +103,21 @@ class DemostoreSimulation extends Simulation {
 						.formParam("_csrf", "${csrfValue}")
 				)
 		}
+
+		def completeCheckout = {
+			exec(
+				{
+					http("Checkout Cart")
+						.get("/cart/checkout")
+						.check(status.is(200))
+						.check(substring("Thanks for your order!"))
+				}
+			)
+		}
 	}
 
 	val scn = scenario("DemostoreSimulation")
+		.exec(initSession)
 		.exec(CMSPages.homePage)
 		.pause(2)
 		.exec(CMSPages.about)
@@ -102,15 +127,10 @@ class DemostoreSimulation extends Simulation {
 		.exec(Product.add)
 		.pause(1)
 		.exec(Checkout.viewCart)
-		.pause(4)
-		.exec(http("Login User")
-			.post("/login")
-			.formParam("_csrf", "${csrfValue}")
-			.formParam("username", "user1")
-			.formParam("password", "pass"))
-		.pause(3)
-		.exec(http("Checkout")
-			.get("/cart/checkout"))
+		.pause(2)
+		.exec(Customer.login)
+		.pause(2)
+		.exec(Customer.completeCheckout)
 
 	setUp(scn.inject(atOnceUsers(3))).protocols(httpProtocol)
 }
