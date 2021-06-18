@@ -29,7 +29,7 @@ class DemostoreSimulation extends Simulation {
 		.exec(session => session.set("customerLoggedIn", false))
 		.exec(session => session.set("cartTotal", 0.0))
 		.exec(addCookie(Cookie("sessionID", randomString(10)).withDomain(domain)))
-		.exec { session => println(session); session}
+
 	object CMSPages{
 		def homePage = {
 			exec(http("Load Home Page")
@@ -75,15 +75,26 @@ class DemostoreSimulation extends Simulation {
 				.get("/cart/add/${id}")
 				.check(substring("items in your cart"))
 			)
+				.exec(session => {
+					val currentCartTotal = session("cartTotal").as[Double]
+					val itemPrice = session("price").as[Double]
+					session.set("cartTotal", (currentCartTotal+itemPrice))
+				})
 		}
 	}
 
 	object Checkout{
 		def viewCart = {
-			exec(
+			doIf(session => !session("customerLoggedIn").as[Boolean]){
+				exec(Customer.login)
+			}
+			.exec(
 				http("Load Cart Page")
 					.get("/cart/view")
 					.check(status.is(200))
+					.check(substring("Cart Overview"))
+					.check(css("#grandTotal").is("$$${cartTotal}"))
+
 			)
 		}
 	}
@@ -101,7 +112,11 @@ class DemostoreSimulation extends Simulation {
 					http("Customer Login Action")
 						.post("/login")
 						.formParam("_csrf", "${csrfValue}")
+						.formParam("username", "${username}")
+						.formParam("password", "${password}")
+						.check(status.is(200))
 				)
+				.exec(session => session.set("customerLoggedIn", true))
 		}
 
 		def completeCheckout = {
@@ -128,9 +143,7 @@ class DemostoreSimulation extends Simulation {
 		.pause(1)
 		.exec(Checkout.viewCart)
 		.pause(2)
-		.exec(Customer.login)
-		.pause(2)
 		.exec(Customer.completeCheckout)
 
-	setUp(scn.inject(atOnceUsers(3))).protocols(httpProtocol)
+	setUp(scn.inject(atOnceUsers(1))).protocols(httpProtocol)
 }
